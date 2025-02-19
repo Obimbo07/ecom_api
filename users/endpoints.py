@@ -10,6 +10,8 @@ from django.contrib.auth import get_user_model
 
 from django.conf import settings
 
+from users.models import BlacklistedToken
+
 router = APIRouter()
 User = get_user_model()  # This ensures Django uses the correct user model
 
@@ -66,32 +68,40 @@ def login_user(request: Request, request_data: LoginRequest):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     
     token = create_jwt_token(user.id)
-    return JSONResponse(content={"access_token": token, "token_tyoe": "bearer"}, status_code=200)
+    return JSONResponse(content={"access_token": token, "token_type": "bearer"}, status_code=200)
 
 # user authentication middleware
 def get_current_user(token: HTTPAuthorizationCredentials = Security(security),
 ):
     if not token:
         raise HTTPException(status_code=403, detail="Token missing")
+    print(token)
     
     credentials_exception = HTTPException(status_code=403, detail="Invalid token")
 
     try:
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        if BlacklistedToken.objects.filter(token=token.credentials).exists():
+            raise credentials_exception
         user = User.objects.get(id=payload["user_id"])
         return user
     except (jwt.ExpiredSignatureError, jwt.DecodeError, User.DoesNotExist):
         raise credentials_exception
 
-
-# ✅ User Logout (Session Destruction)
+# log out users by blacklisting the tokens
 @router.post("/users/logout")
-def logout_user(request: Request):
+def logout_user(request: Request, token: str = Depends(get_current_user)):
     """
-    Logout user and destroy session.
+    Blacklist the JWT token upon logout.
     """
-    logout(request)  # Destroy session
-    return JSONResponse(content={"message": "Logout successful"}, status_code=200)
+    if not token:
+        raise HTTPException(status_code=403, detail="Token missing")
+
+    # Save the token to the blacklist
+    if not BlacklistedToken.objects.filter(token=token).exists():
+      BlacklistedToken.objects.create(token=token)
+
+    return JSONResponse(content={"message": "Logout successful. Token invalidated."}, status_code=200)
 
 
 # ✅ Check Session Status
