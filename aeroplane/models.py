@@ -6,7 +6,6 @@ from users.models import User
 from django.utils.safestring import mark_safe
 from django_ckeditor_5.fields import CKEditor5Field
 
-
 STATUS_CHOICE = (
     ("processing", "Processing"),
     ("shipped", "Shipped"),
@@ -29,8 +28,6 @@ STATUS = (
     ("published", "Published"),
 )
 
-
-
 RATING = (
     ( 1,  "★☆☆☆☆"),
     ( 2,  "★★☆☆☆"),
@@ -38,7 +35,6 @@ RATING = (
     ( 4,  "★★★★☆"),
     ( 5,  "★★★★★"),
 )
-
 
 def user_directory_path(instance, filename):
     return 'user_{0}/{1}'.format(instance.user.id, filename)
@@ -62,7 +58,6 @@ class Tag(models.Model):
 
     def __str__(self):
         return self.name
-
 
 class Product(models.Model):
     pid = ShortUUIDField(unique=True, max_length=20)
@@ -88,8 +83,6 @@ class Product(models.Model):
     date = models.DateTimeField(auto_now_add=True)
     updated = models.DateTimeField(null=True, blank=True)
 
-
-
     class Meta:
         verbose_name_plural = "Products"
 
@@ -109,6 +102,31 @@ class ProductImages(models.Model):
     product = models.ForeignKey(Product, related_name="p_images", on_delete=models.SET_NULL, null=True)
     date = models.DateTimeField(auto_now_add=True)
 
-
     class Meta:
         verbose_name_plural = "Product Images"
+
+class Cart(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Cart"
+        verbose_name_plural = "Carts"
+
+    def __str__(self):
+        return f"Cart for {self.user.username if self.user else 'Guest'}"
+
+class CartItem(models.Model):
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField(default=1)
+    size = models.CharField(max_length=10, default='M')
+    added_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Cart Item"
+        verbose_name_plural = "Cart Items"
+
+    def __str__(self):
+        return f"{self.quantity} x {self.product.title} (Size: {self.size})"
