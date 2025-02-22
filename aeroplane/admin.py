@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Category, Tag, Product, ProductImages
+from .models import Cart, CartItem, Category, Tag, Product, ProductImages
 from django.utils.safestring import mark_safe
 
 @admin.register(Category)
@@ -28,3 +28,12 @@ class ProductAdmin(admin.ModelAdmin):
     filter_horizontal = ('tags',)
 
     exclude = ['sku']
+
+
+@admin.register(Cart)
+class CartAdmin(admin.ModelAdmin):
+    list_display = ('user', 'is_active')
+
+@admin.register(CartItem)
+class CartItemAdmin(admin.ModelAdmin):
+    list_display = ('cart', 'product')

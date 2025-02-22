@@ -1,6 +1,6 @@
 from typing import List
 from django.db import transaction
-from .models import Category, Product  # Assuming Product is one of your models
+from .models import Cart, CartItem, Category, CheckoutSession, Product  # Assuming Product is one of your models
 
 def create_product(**kwargs):
     """
@@ -74,3 +74,52 @@ def get_products_by_category(category_id: int) -> List[Product]:
         return list(Product.objects.filter(category_id=category_id))
     except Product.DoesNotExist:
         return []
+    
+def create_cart(user=None) -> Cart:
+    with transaction.atomic():
+        cart = Cart.objects.create(user=user)
+    return cart
+
+def get_or_create_cart(user=None) -> Cart:
+    if user:
+        cart = Cart.objects.filter(user=user, is_active=True).first()
+        if not cart:
+            cart = create_cart(user)
+    else:
+        cart = Cart.objects.filter(user__isnull=True, is_active=True).first()
+        if not cart:
+            cart = create_cart()
+    return cart
+
+def add_to_cart(cart: Cart, product_id: int, quantity: int = 1, size: str = 'M') -> CartItem:
+    with transaction.atomic():
+        product = Product.objects.get(id=product_id)
+        cart_item, created = CartItem.objects.get_or_create(
+            cart=cart,
+            product=product,
+            size=size,
+            defaults={'quantity': quantity}
+        )
+        if not created:
+            cart_item.quantity += quantity
+            cart_item.save()
+        return cart_item
+
+def remove_from_cart(cart: Cart, cart_item_id: int) -> bool:
+    with transaction.atomic():
+        try:
+            cart_item = CartItem.objects.get(id=cart_item_id, cart=cart)
+            print(cart_item)
+            cart_item.delete()
+            return True
+        except CartItem.DoesNotExist:
+            return False
+
+def create_checkout_session(cart: Cart) -> CheckoutSession:
+    with transaction.atomic():
+
+        checkout_session = CheckoutSession.objects.create(
+            cart=cart,
+            status='draft'
+        )
+        return checkout_session 
