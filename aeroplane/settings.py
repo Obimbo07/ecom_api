@@ -201,3 +201,5 @@ CKEDITOR_5_CONFIGS = {
         }
     }
 }
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
