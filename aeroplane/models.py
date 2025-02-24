@@ -132,11 +132,43 @@ class CartItem(models.Model):
     def __str__(self):
         return f"{self.quantity} x {self.product.title} (Size: {self.size})"
     
-class CheckoutSession(models.Model):
-    cart = models.OneToOneField(Cart, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=PAYMENT_CHOICE, default="draft")
+
+class Order(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+    )
+    PAYMENT_STATUS_CHOICES = (
+        ('unpaid', 'Unpaid'),
+        ('paid', 'Paid'),
+        ('failed', 'Failed'),
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='unpaid')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Checkout {self.id} for Cart {self.cart.id}"
+        return f"Order {self.id} - {self.user.username}"
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey('Product', on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)  # Price at the time of order
+    size = models.CharField(max_length=20, blank=True, null=True)  # Optional, if applicable
+
+    def __str__(self):
+        return f"{self.product.title} (x{self.quantity})"
+
+class CheckoutSession(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE)
+    stripe_session_id = models.CharField(max_length=255, default='222')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Checkout Session for Order {self.order.id}"
