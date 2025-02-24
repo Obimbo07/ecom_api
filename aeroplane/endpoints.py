@@ -9,7 +9,7 @@ from starlette.responses import JSONResponse
 from django.db import transaction
 
 from users.endpoints import get_current_user
-from .models import Product
+from .models import Cart, CheckoutSession, Order, OrderItem, Product
 from .crud import (
     add_to_cart, create_checkout_session, create_product, get_categories,
     get_or_create_cart, get_product, get_products, get_products_by_category,
@@ -122,6 +122,25 @@ class CheckoutResponse(BaseModel):
 class CartItemUpdate(BaseModel):
     quantity: Optional[int] = None
     size: Optional[str] = None
+
+class OrderCreateResponse(BaseModel):
+    id: int
+    total_amount: float
+    status: str
+    payment_status: str
+
+    class Config:
+        orm_mode = True
+
+class OrderItemResponse(BaseModel):
+    product_title: str
+    quantity: int
+    price: float
+    size: Optional[str] = None  # Some products may not have sizes
+
+    class Config:
+        orm_mode = True
+
 
 # ✅ List Products
 @router.get("/products/", response_model=List[ProductResponse])
@@ -354,3 +373,109 @@ def create_checkout(user=Depends(get_current_user)):
     cart = get_or_create_cart(user)
     checkout_session = create_checkout_session(cart)
     return CheckoutResponse(id=checkout_session.id, status=checkout_session.status)
+
+
+@router.post("/orders/", response_model=OrderCreateResponse)
+def create_order(user=Depends(get_current_user)):
+    cart = Cart.objects.filter(user=user, is_active=True).first()
+    if not cart or not cart.items.exists():
+        raise HTTPException(status_code=400, detail="Cart is empty or does not exist")
+
+    with transaction.atomic():
+        total_amount = sum(item.product.price * item.quantity for item in cart.items.all())
+        order = Order.objects.create(
+            user=user,
+            total_amount=total_amount,
+            status="pending",
+            payment_status="unpaid"
+        )
+
+        for item in cart.items.all():
+            OrderItem.objects.create(
+                order=order,
+                product=item.product,
+                quantity=item.quantity,
+                price=item.product.price,
+                size=item.size
+            )
+
+        cart.is_active = False
+        cart.save()
+
+        return OrderCreateResponse(
+            id=order.id,
+            total_amount=float(order.total_amount),
+            status=order.status,
+            payment_status=order.payment_status
+        )
+
+@router.get("/orders/{order_id}/items/", response_model=List[OrderItemResponse])
+def get_order_items(order_id: int, user=Depends(get_current_user)):
+    """
+    Fetch all items in an order.
+    """
+    try:
+        order = Order.objects.get(id=order_id, user=user)
+
+    except Order.DoesNotExist:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    order_items = order.items.all()  # Fetch related OrderItems
+    return [
+        OrderItemResponse(
+            product_title=item.product.title,
+            quantity=item.quantity,
+            price=float(item.price),  # Convert Decimal to float
+            size=item.size
+        )
+        for item in order_items
+    ]
+
+
+# import stripe
+
+# stripe.api_key = "your_stripe_secret_key"  # Set this in your environment or settings
+
+# class CheckoutSessionRequest(BaseModel):
+#     order_id: int
+
+# class CheckoutSessionResponse(BaseModel):
+#     session_url: str
+
+# @router.post("/checkout-session/", response_model=CheckoutSessionResponse)
+# def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_current_user)):
+#     try:
+#         order = Order.objects.get(id=request.order_id, user=user)
+#         if order.payment_status != "unpaid":
+#             raise HTTPException(status_code=400, detail="Order already processed")
+
+#         line_items = [
+#             {
+#                 "price_data": {
+#                     "currency": "usd",
+#                     "product_data": {"name": item.product.title},
+#                     "unit_amount": int(item.price * 100),  # Convert to cents
+#                 },
+#                 "quantity": item.quantity,
+#             }
+#             for item in order.items.all()
+#         ]
+
+#         session = stripe.checkout.Session.create(
+#             payment_method_types=["card"],
+#             line_items=line_items,
+#             mode="payment",
+#             success_url="http://localhost:3000/success",  # Adjust for your frontend
+#             cancel_url="http://localhost:3000/cancel",
+#         )
+
+#         CheckoutSession.objects.create(
+#             order=order,
+#             stripe_session_id=session.id
+#         )
+
+#         return CheckoutSessionResponse(session_url=session.url)
+#     except Order.DoesNotExist:
+#         raise HTTPException(status_code=404, detail="Order not found")
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=str(e))
