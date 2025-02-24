@@ -13,7 +13,7 @@ from .models import Product
 from .crud import (
     add_to_cart, create_checkout_session, create_product, get_categories,
     get_or_create_cart, get_product, get_products, get_products_by_category,
-    remove_from_cart, update_product, delete_product
+    remove_from_cart, update_cart_it, update_product, delete_product
 )
 
 router = APIRouter()
@@ -99,6 +99,7 @@ class CategoryResponse(BaseModel):
         orm_mode = True
 
 class CartItemBase(BaseModel):
+    id: Optional[int] = None
     product_id: int
     quantity: int = 1
     size: str = 'M'
@@ -117,6 +118,10 @@ class CheckoutResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+class CartItemUpdate(BaseModel):
+    quantity: Optional[int] = None
+    size: Optional[str] = None
 
 # ✅ List Products
 @router.get("/products/", response_model=List[ProductResponse])
@@ -293,23 +298,48 @@ def get_cart(user=Depends(get_current_user)):
     total = sum(item.product.price * item.quantity for item in items)
     return CartResponse(
         id=cart.id,
-        items=[CartItemBase(product_id=item.product.id, quantity=item.quantity, size=item.size) for item in items],
+        items=[CartItemBase(id=item.id, product_id=item.product.id, quantity=item.quantity, size=item.size) for item in items],
         total=total
     )
 
 # ✅ Add to Cart
 @router.post("/cart/items/", response_model=CartResponse)
 def add_item_to_cart(item_data: CartItemBase, user=Depends(get_current_user)):
+    print(f"Received item_data: {item_data}")  # Debug: Log the received data 
     cart = get_or_create_cart(user)
     cart_item = add_to_cart(cart, item_data.product_id, item_data.quantity, item_data.size)
     items = cart.items.all()
     total = sum(item.product.price * item.quantity for item in items)
     return CartResponse(
         id=cart.id,
-        items=[CartItemBase(product_id=item.product.id, quantity=item.quantity, size=item.size) for item in items],
+        items=[CartItemBase(id= item.id, product_id=item.product.id, quantity=item.quantity, size=item.size) for item in items],
         total=total
     )
 
+# ✅ Update Cart Item
+@router.put("/cart/items/{cart_item_id}", response_model=CartResponse)
+def update_cart_item(cart_item_id: int, item_data: CartItemUpdate, user=Depends(get_current_user)):
+    """
+    Update the quantity and/or size of a specific cart item.
+    """
+    cart = get_or_create_cart(user)
+    try:
+        # Ensure we’re passing only the expected 
+        print('bafore')
+        updated_cart = update_cart_it(cart, cart_item_id, quantity=item_data.quantity, size=item_data.size)
+        print('after')
+        items = updated_cart.items.all()
+        total = sum(item.product.price * item.quantity for item in items)
+        return CartResponse(
+            id=updated_cart.id,
+            items=[CartItemBase(id=item.id, product_id=item.product.id, quantity=item.quantity, size=item.size) for item in items],
+            total=total
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
 # ✅ Remove from Cart
 @router.delete("/cart/items/{cart_item_id}")
 def remove_item_from_cart(cart_item_id: int, user=Depends(get_current_user)):
