@@ -1,6 +1,6 @@
 from typing import List, Optional
 from django.db import transaction
-from .models import Cart, CartItem, Category, CheckoutSession, Product  # Assuming Product is one of your models
+from .models import Cart, CartItem, Category, CheckoutSession, Product, ProductReview  # Assuming Product is one of your models
 
 def create_product(**kwargs):
     """
@@ -161,3 +161,71 @@ def create_checkout_session(cart: Cart) -> CheckoutSession:
             status='draft'
         )
         return checkout_session 
+    
+
+def create_pro_review(user, product_id, data):
+    """
+    Create a product review for a specific product by a user and return a response-compatible dict.
+    """
+    try:
+        product = Product.objects.get(id=product_id)
+    except Product.DoesNotExist:
+        raise ValueError("Product not found")
+    
+    if 'rating' not in data or not isinstance(data['rating'], int):
+        raise ValueError("Rating is required and must be an integer")
+    
+    review = ProductReview.objects.create(user=user, product=product, **data)
+    
+    # Return a dict matching ProductReviewResponse
+    return {
+        "id": review.id,
+        "user": review.user.username,  # Extract username as string
+        "product": review.product.id,  # Extract product ID as integer
+        "rating": review.rating,
+        "review_text": review.review_text,
+        "created_at": review.created_at,
+        "updated_at": review.updated_at,
+        "is_approved": review.is_approved,
+    }
+
+def get_product_reviews(product_id=None, user=None):
+    """
+    Retrieve product reviews, optionally filtered by product_id or user, returning a list of dicts.
+    """
+    queryset = ProductReview.objects.all()
+    if product_id:
+        queryset = queryset.filter(product_id=product_id)
+    if user:
+        queryset = queryset.filter(user=user)
+    
+    reviews = list(queryset)  # Convert QuerySet to list
+    return [
+        {
+            "id": review.id,
+            "user": review.user.username,  # Extract username as string
+            "product": review.product.id,  # Extract product ID as integer
+            "rating": review.rating,
+            "review_text": review.review_text,
+            "created_at": review.created_at,
+            "updated_at": review.updated_at,
+            "is_approved": review.is_approved,
+        }
+        for review in reviews
+    ]
+
+def update_product_review(review_id, user, data):
+    review = ProductReview.objects.filter(id=review_id, user=user).first()
+    if not review:
+        raise ValueError("Review not found or unauthorized")
+    for key, value in data.items():
+        setattr(review, key, value)
+    review.save()
+    return review
+
+def delete_product_review(review_id, user):
+    review = ProductReview.objects.filter(id=review_id, user=user).first()
+    if not review:
+        raise ValueError("Review not found or unauthorized")
+    review.delete()
+    return True
