@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cart, CartItem, Category, CheckoutSession, Order, OrderItem, Tag, Product, ProductImages
+from .models import Cart, CartItem, Category, CheckoutSession, MpesaTransaction, Order, OrderItem, Tag, Product, ProductImages
 from django.utils.safestring import mark_safe
 
 @admin.register(Category)
@@ -50,4 +50,8 @@ class OrderItemAdmin(admin.ModelAdmin):
 # Register CheckoutSession model
 @admin.register(CheckoutSession)
 class CheckoutSessionAdmin(admin.ModelAdmin):
-    list_display = ('order', 'stripe_session_id', 'created_at')
+    list_display = ('order', 'status', 'created_at')
+
+@admin.register(MpesaTransaction)
+class MpesaTransactionAdmin(admin.ModelAdmin):
+    list_display = ('order', 'status', 'amount')
