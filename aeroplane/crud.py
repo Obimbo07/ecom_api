@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from django.db import transaction
 from .models import Cart, CartItem, Category, CheckoutSession, Product  # Assuming Product is one of your models
 
@@ -103,7 +103,45 @@ def add_to_cart(cart: Cart, product_id: int, quantity: int = 1, size: str = 'M')
         if not created:
             cart_item.quantity += quantity
             cart_item.save()
-        return cart_item
+        return 
+    
+def update_cart_it(cart: Cart, cart_item_id: int, quantity: int = None, size: str = None) -> Cart:
+    print(cart, 'cart in Data')
+
+    """
+    Update the quantity and/or size of a specific cart item.
+    
+    Args:
+        cart: The user's cart instance.
+        cart_item_id: The ID of the cart item to update.
+        quantity: Optional new quantity (if provided, must be > 0).
+        size: Optional new size (if provided, must be a valid size, e.g., 'XS', 'S', 'M', 'L', 'XL').
+    
+    Raises:
+        ValueError: If the cart item is not found or if the update is invalid.
+    """
+    print(f"Received args: cart={cart}, cart_item_id={cart_item_id}, quantity={quantity}, size={size}")
+    try:
+        cart_item = cart.items.get(id=cart_item_id)
+        print(cart_item, 'cart Data')
+        
+    except CartItem.DoesNotExist:
+        raise ValueError("Cart item not found")
+    if quantity is not None:
+      new_quantity = cart_item.quantity + quantity
+
+      if new_quantity < 1:
+        raise ValueError("Quantity must be greater than 0")
+      cart_item.quantity = new_quantity
+    if size is not None:
+        # Validate size (you can customize this validation based on your needs)
+        valid_sizes = ['XS', 'S', 'M', 'L', 'XL', 'string']            
+        if size not in valid_sizes:
+            raise ValueError("Invalid size provided")
+        cart_item.size = size
+
+    cart_item.save()
+    return cart
 
 def remove_from_cart(cart: Cart, cart_item_id: int) -> bool:
     with transaction.atomic():

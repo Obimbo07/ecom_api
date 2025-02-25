@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cart, CartItem, Category, Tag, Product, ProductImages
+from .models import Cart, CartItem, Category, CheckoutSession, Order, OrderItem, Tag, Product, ProductImages
 from django.utils.safestring import mark_safe
 
 @admin.register(Category)
@@ -37,3 +37,17 @@ class CartAdmin(admin.ModelAdmin):
 @admin.register(CartItem)
 class CartItemAdmin(admin.ModelAdmin):
     list_display = ('cart', 'product')
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ('user', 'status')
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('order', 'quantity', 'price', 'size')
+
+# Register CheckoutSession model
+@admin.register(CheckoutSession)
+class CheckoutSessionAdmin(admin.ModelAdmin):
+    list_display = ('order', 'stripe_session_id', 'created_at')
