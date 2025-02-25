@@ -172,3 +172,16 @@ class CheckoutSession(models.Model):
 
     def __str__(self):
         return f"Checkout Session for Order {self.order.id}"
+    
+
+class ProductReview(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='product_reviews')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    rating = models.PositiveSmallIntegerField(choices=RATING)  # Use your existing RATING choices
+    review_text = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_approved = models.BooleanField(default=False)  # Optional: admin approval for reviews
+
+    def __str__(self):
+        return f"Review by {self.user.username} for {self.product.title} ({self.rating} stars)"

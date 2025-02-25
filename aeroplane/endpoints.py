@@ -9,11 +9,11 @@ from starlette.responses import JSONResponse
 from django.db import transaction
 
 from users.endpoints import get_current_user
-from .models import Cart, CheckoutSession, Order, OrderItem, Product
+from .models import RATING, Cart, CheckoutSession, Order, OrderItem, Product
 from .crud import (
-    add_to_cart, create_checkout_session, create_product, get_categories,
-    get_or_create_cart, get_product, get_products, get_products_by_category,
-    remove_from_cart, update_cart_it, update_product, delete_product
+    add_to_cart, create_checkout_session, create_pro_review, create_product, delete_product_review, get_categories,
+    get_or_create_cart, get_product, get_product_reviews, get_products, get_products_by_category,
+    remove_from_cart, update_cart_it, update_product, delete_product, update_product_review
 )
 
 router = APIRouter()
@@ -141,6 +141,34 @@ class OrderItemResponse(BaseModel):
     class Config:
         orm_mode = True
 
+class OrderResponse(BaseModel):
+    id: int
+    total_amount: float
+    status: str
+    payment_status: str
+    created_at: datetime
+    items: List[OrderItemResponse] = []
+
+    class Config:
+        orm_mode = True
+
+
+class ProductReviewRequest(BaseModel):
+    rating: int
+    review_text: str = None
+
+class ProductReviewResponse(BaseModel):
+    id: int
+    user: str  # Username
+    product: int  # Product ID
+    rating: int
+    review_text: str = None
+    created_at: datetime
+    updated_at: datetime
+    is_approved: bool
+
+    class Config:
+        orm_mode = True
 
 # ✅ List Products
 @router.get("/products/", response_model=List[ProductResponse])
@@ -430,6 +458,90 @@ def get_order_items(order_id: int, user=Depends(get_current_user)):
         )
         for item in order_items
     ]
+
+@router.get("/user/orders/", response_model=List[OrderResponse])
+def get_user_orders(user=Depends(get_current_user)):
+    """
+    Fetch all orders for the authenticated user.
+    """
+    try:
+        # Fetch all orders for the user
+        orders = Order.objects.filter(user=user).order_by('-created_at')
+        
+        if not orders.exists():
+            return []  # Return empty list if no orders found
+
+        order_responses = []
+        for order in orders:
+            order_items = order.items.all()
+            order_responses.append(
+                OrderResponse(
+                    id=order.id,
+                    total_amount=float(order.total_amount),
+                    status=order.status,
+                    payment_status=order.payment_status,
+                    created_at=order.created_at,
+                    items=[
+                        OrderItemResponse(
+                            product_title=item.product.title,
+                            quantity=item.quantity,
+                            price=float(item.price),
+                            size=item.size
+                        )
+                        for item in order_items
+                    ]
+                )
+            )
+        return order_responses
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
+
+# Product Reviews
+@router.post("/products/{product_id}/reviews/", response_model=ProductReviewResponse)
+def create_product_review(product_id: int, review_data: ProductReviewRequest, user=Depends(get_current_user)):
+    """
+    Create a review for a specific product by the authenticated user.
+    """
+    print(review_data, 'reviews')
+    print(product_id, 'reviews')
+    # Ensure review_data is a ProductReviewRequest instance
+    if not isinstance(review_data, ProductReviewRequest):
+        raise HTTPException(status_code=400, detail="Invalid request body: expected review data with rating")
+
+    # Validate rating against RATING choices
+    if review_data.rating not in [choice[0] for choice in RATING]:
+        raise HTTPException(status_code=400, detail="Invalid rating value")
+    
+    # Convert Pydantic model to dictionary and pass it to the CRUD function
+    data = review_data.dict(exclude_unset=True)
+    review = create_pro_review(user, product_id, data)
+    return review
+
+@router.get("/products/{product_id}/reviews/", response_model=List[ProductReviewResponse])
+def list_product_reviews(product_id: int, user=Depends(get_current_user)):
+    reviews = get_product_reviews(product_id=product_id)
+    return reviews
+
+@router.get("/users/reviews/", response_model=List[ProductReviewResponse])
+def list_user_reviews(user=Depends(get_current_user)):
+    reviews = get_product_reviews(user=user)
+    return reviews
+
+@router.put("/reviews/{review_id}", response_model=ProductReviewResponse)
+def update_product_review_endpoint(review_id: int, review_data: ProductReviewRequest, user=Depends(get_current_user)):
+    data = review_data.dict(exclude_unset=True)
+    if data.get('rating') and data['rating'] not in [choice[0] for choice in RATING]:
+        raise HTTPException(status_code=400, detail="Invalid rating value")
+    review = update_product_review(review_id, user, data)
+    return review
+
+@router.delete("/reviews/{review_id}")
+def delete_product_review_endpoint(review_id: int, user=Depends(get_current_user)):
+    if delete_product_review(review_id, user):
+        return JSONResponse(content={"message": "Review deleted successfully"}, status_code=200)
+    raise HTTPException(status_code=404, detail="Review not found or unauthorized")
 
 
 # import stripe
