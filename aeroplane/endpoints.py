@@ -9,10 +9,11 @@ from starlette.responses import JSONResponse
 from django.db import transaction
 
 from users.endpoints import get_current_user
+from users.models import PaymentMethod, ShippingAddress
 from .models import RATING, Cart, CheckoutSession, Order, OrderItem, Product
 from .crud import (
     add_to_cart, create_checkout_session, create_pro_review, create_product, delete_product_review, get_categories,
-    get_or_create_cart, get_product, get_product_reviews, get_products, get_products_by_category,
+    get_or_create_cart, get_product, get_product_reviews, get_products, get_products_by_category, initiate_mpesa_stk_push, process_mpesa_callback,
     remove_from_cart, update_cart_it, update_product, delete_product, update_product_review
 )
 
@@ -544,50 +545,64 @@ def delete_product_review_endpoint(review_id: int, user=Depends(get_current_user
     raise HTTPException(status_code=404, detail="Review not found or unauthorized")
 
 
-# import stripe
+class CheckoutSessionRequest(BaseModel):
+    order_id: int
+    shipping_address_id: int
+    payment_method_id: int
+    phone_number: str  # M-Pesa phone number (e.g., 254708374149)
 
-# stripe.api_key = "your_stripe_secret_key"  # Set this in your environment or settings
+class CheckoutSessionResponse(BaseModel):
+    checkout_request_id: str
+    merchant_request_id: str
+    response_code: str
+    response_description: str
+    customer_message: str
 
-# class CheckoutSessionRequest(BaseModel):
-#     order_id: int
+@router.post("/checkout-session/", response_model=CheckoutSessionResponse)
+def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_current_user)):
+    try:
+        order = Order.objects.get(id=request.order_id, user=user)
+        if order.payment_status != "unpaid":
+            raise HTTPException(status_code=400, detail="Order already processed")
 
-# class CheckoutSessionResponse(BaseModel):
-#     session_url: str
+        shipping_address = ShippingAddress.objects.get(id=request.shipping_address_id, user=user)
+        payment_method = PaymentMethod.objects.get(id=request.payment_method_id, user=user)
 
-# @router.post("/checkout-session/", response_model=CheckoutSessionResponse)
-# def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_current_user)):
-#     try:
-#         order = Order.objects.get(id=request.order_id, user=user)
-#         if order.payment_status != "unpaid":
-#             raise HTTPException(status_code=400, detail="Order already processed")
+        # Calculate order total (ensure it matches your items)
+        order_total = sum(item.price * item.quantity for item in order.items.all())
+        
+        # Use the phone number from payment_method or request
+        phone_number = request.phone_number or payment_method.phone_number
+        print(phone_number, "number")
+        if not phone_number or not phone_number.startswith('254'):
+            raise HTTPException(status_code=400, detail="Invalid M-Pesa phone number")
 
-#         line_items = [
-#             {
-#                 "price_data": {
-#                     "currency": "usd",
-#                     "product_data": {"name": item.product.title},
-#                     "unit_amount": int(item.price * 100),  # Convert to cents
-#                 },
-#                 "quantity": item.quantity,
-#             }
-#             for item in order.items.all()
-#         ]
+        # Initiate M-Pesa STK Push
+        callback_url = f"https://moha.com/api/mpesa-callback"
+        mpesa_response = initiate_mpesa_stk_push(order, phone_number, order_total, callback_url)
 
-#         session = stripe.checkout.Session.create(
-#             payment_method_types=["card"],
-#             line_items=line_items,
-#             mode="payment",
-#             success_url="http://localhost:3000/success",  # Adjust for your frontend
-#             cancel_url="http://localhost:3000/cancel",
-#         )
+        # Create or update CheckoutSession (optional, if still needed)
+        checkout_session, created = CheckoutSession.objects.get_or_create(order=order)
+        checkout_session.status = 'pending'
+        checkout_session.save()
 
-#         CheckoutSession.objects.create(
-#             order=order,
-#             stripe_session_id=session.id
-#         )
+        return CheckoutSessionResponse( 
+            checkout_request_id=mpesa_response['CheckoutRequestID'],
+            merchant_request_id=mpesa_response['MerchantRequestID'],
+            response_code=mpesa_response['ResponseCode'],
+            response_description=mpesa_response['ResponseDescription'],
+            customer_message=mpesa_response['CustomerMessage']
+        )
+    except (Order.DoesNotExist, ShippingAddress.DoesNotExist, PaymentMethod.DoesNotExist):
+        raise HTTPException(status_code=404, detail="Order, shipping address, or payment method not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
 
-#         return CheckoutSessionResponse(session_url=session.url)
-#     except Order.DoesNotExist:
-#         raise HTTPException(status_code=404, detail="Order not found")
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=str(e))
+@router.post("/mpesa-callback/")
+async def mpesa_callback(request: Request):
+    body = await request.json()
+    result = process_mpesa_callback(body)
+    if result['status'] == 'error':
+        raise HTTPException(status_code=500, detail=result['message'])
+    return JSONResponse(content={'status': 'success', 'message': result['message']})
