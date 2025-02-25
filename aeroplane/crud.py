@@ -1,6 +1,9 @@
+import base64
+from datetime import datetime
 from typing import List, Optional
 from django.db import transaction
-from .models import Cart, CartItem, Category, CheckoutSession, Product, ProductReview  # Assuming Product is one of your models
+import requests
+from .models import Cart, CartItem, Category, CheckoutSession, Order, Product, ProductReview  # Assuming Product is one of your models
 
 def create_product(**kwargs):
     """
@@ -229,3 +232,134 @@ def delete_product_review(review_id, user):
         raise ValueError("Review not found or unauthorized")
     review.delete()
     return True
+
+
+from django.conf import settings
+from .models import MpesaTransaction
+
+def generate_mpesa_access_token():
+    """
+    Generate an access token for M-Pesa API using Consumer Key and Secret.
+    """
+    consumer_key = settings.MPESA_CONSUMER_KEY
+    consumer_secret = settings.MPESA_CONSUMER_SECRET
+    credentials = f"{consumer_key}:{consumer_secret}"
+    encoded_credentials = base64.b64encode(credentials.encode()).decode('utf-8')
+    
+    url = 'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
+    headers = {
+        'Authorization': f'Basic {encoded_credentials}',
+    }
+    
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()['access_token']
+
+def generate_mpesa_password(business_shortcode, passkey, timestamp):
+    """
+    Generate the M-Pesa password (base64 encoded combination of Shortcode, Passkey, and Timestamp).
+    """
+    password = f"{business_shortcode}{passkey}{timestamp}"
+    return base64.b64encode(password.encode()).decode('utf-8')
+
+def initiate_mpesa_stk_push(order: Order, phone_number: str, amount: float, callback_url: str):
+    """
+    Initiate an M-Pesa STK Push request for a given order and create an MpesaTransaction record.
+    """
+    business_shortcode = settings.MPESA_BUSINESS_SHORTCODE
+    passkey = settings.MPESA_PASSKEY
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    
+    password = generate_mpesa_password(business_shortcode, passkey, timestamp)
+    
+    payload = {
+        "BusinessShortCode": business_shortcode,
+        "Password": password,
+        "Timestamp": timestamp,
+        "TransactionType": "CustomerPayBillOnline",
+        "Amount": int(amount),  # M-Pesa requires whole numbers
+        "PartyA": phone_number,
+        "PartyB": business_shortcode,
+        "PhoneNumber": phone_number,
+        "CallBackURL": callback_url,
+        "AccountReference": f"Order_{order.id}",
+        "TransactionDesc": f"Payment for Order {order.id}"
+    }
+    
+    access_token = generate_mpesa_access_token()
+    url = 'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {access_token}',
+    }
+    
+    response = requests.post(url, json=payload, headers=headers)
+    response.text.encode('utf-8')
+    print(response, "mpesa response")
+
+    
+    mpesa_response = response.json()
+    print(mpesa_response, 'mpesa response')
+    
+    # Create or update MpesaTransaction
+    mpesa_transaction, created = MpesaTransaction.objects.get_or_create(
+        order=order,
+        defaults={
+            'checkout_session': CheckoutSession.objects.get_or_create(order=order)[0],
+            'merchant_request_id': mpesa_response['MerchantRequestID'],
+            'checkout_request_id': mpesa_response['CheckoutRequestID'],
+            'phone_number': phone_number,
+            'amount': amount,
+            'status': 'pending',
+        }
+    )
+    
+    if not created:
+        mpesa_transaction.merchant_request_id = mpesa_response['MerchantRequestID']
+        mpesa_transaction.checkout_request_id = mpesa_response['CheckoutRequestID']
+        mpesa_transaction.phone_number = phone_number
+        mpesa_transaction.amount = amount
+        mpesa_transaction.status = 'pending'
+        mpesa_transaction.save()
+    
+    return mpesa_response
+
+def process_mpesa_callback(callback_data):
+    """
+    Process the M-Pesa callback data and update the MpesaTransaction and related Order.
+    """
+    try:
+        stk_callback = callback_data['Body']['stkCallback']
+        checkout_request_id = stk_callback['CheckoutRequestID']
+        result_code = stk_callback['ResultCode']
+        result_desc = stk_callback['ResultDesc']
+        metadata = stk_callback.get('CallbackMetadata', {}).get('Item', [])
+        
+        # Extract transaction details
+        amount = next((item['Value'] for item in metadata if item['Name'] == 'Amount'), 0)
+        mpesa_receipt_number = next((item['Value'] for item in metadata if item['Name'] == 'MpesaReceiptNumber'), None)
+        transaction_date = next((item['Value'] for item in metadata if item['Name'] == 'TransactionDate'), None)
+        phone_number = next((item['Value'] for item in metadata if item['Name'] == 'PhoneNumber'), None)
+        
+        # Update MpesaTransaction
+        mpesa_transaction = MpesaTransaction.objects.get(checkout_request_id=checkout_request_id)
+        order = mpesa_transaction.order
+        
+        if result_code == 0:  # Success
+            mpesa_transaction.status = 'successful'
+            mpesa_transaction.mpesa_receipt_number = mpesa_receipt_number
+            mpesa_transaction.transaction_date = datetime.strptime(transaction_date, '%Y%m%d%H%M%S')
+            mpesa_transaction.result_code = result_code
+            mpesa_transaction.result_desc = result_desc
+            order.payment_status = 'paid'
+        else:  # Failure
+            mpesa_transaction.status = 'failed'
+            mpesa_transaction.result_code = result_code
+            mpesa_transaction.result_desc = result_desc
+            order.payment_status = 'failed'
+        
+        mpesa_transaction.save()
+        order.save()
+        return {'status': 'success', 'message': result_desc}
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
