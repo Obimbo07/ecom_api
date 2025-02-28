@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Cart, CartItem, Category, Tag, Product, ProductImages
+from .models import Cart, CartItem, Category, CheckoutSession, MpesaTransaction, Order, OrderItem, ProductReview, Tag, Product, ProductImages
 from django.utils.safestring import mark_safe
 
 @admin.register(Category)
@@ -37,3 +37,25 @@ class CartAdmin(admin.ModelAdmin):
 @admin.register(CartItem)
 class CartItemAdmin(admin.ModelAdmin):
     list_display = ('cart', 'product')
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ('user', 'status')
+
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ('order', 'quantity', 'price', 'size')
+
+# Register CheckoutSession model
+@admin.register(CheckoutSession)
+class CheckoutSessionAdmin(admin.ModelAdmin):
+    list_display = ('order', 'status', 'created_at')
+
+@admin.register(ProductReview)
+class ProductReviewAdmin(admin.ModelAdmin):
+    list_display = ('user', 'is_approved', 'rating')
+
+@admin.register(MpesaTransaction)
+class MpesaTransactionAdmin(admin.ModelAdmin):
+    list_display = ('order', 'status', 'amount')

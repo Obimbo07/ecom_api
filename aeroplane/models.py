@@ -132,11 +132,86 @@ class CartItem(models.Model):
     def __str__(self):
         return f"{self.quantity} x {self.product.title} (Size: {self.size})"
     
-class CheckoutSession(models.Model):
-    cart = models.OneToOneField(Cart, on_delete=models.CASCADE)
-    status = models.CharField(max_length=20, choices=PAYMENT_CHOICE, default="draft")
+
+class Order(models.Model):
+    STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('shipped', 'Shipped'),
+        ('delivered', 'Delivered'),
+    )
+    PAYMENT_STATUS_CHOICES = (
+        ('unpaid', 'Unpaid'),
+        ('paid', 'Paid'),
+        ('failed', 'Failed'),
+    )
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='unpaid')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"Checkout {self.id} for Cart {self.cart.id}"
+        return f"Order {self.id} - {self.user.username}"
+
+class OrderItem(models.Model):
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey('Product', on_delete=models.CASCADE)
+    quantity = models.PositiveIntegerField()
+    price = models.DecimalField(max_digits=10, decimal_places=2)  # Price at the time of order
+    size = models.CharField(max_length=20, blank=True, null=True)  # Optional, if applicable
+
+    def __str__(self):
+        return f"{self.product.title} (x{self.quantity})"
+
+class CheckoutSession(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE)
+    mpesa_receipt_number = models.CharField(max_length=255, null=True, blank=True)  # For M-Pesa
+    transaction_date = models.DateTimeField(null=True, blank=True)  # For M-Pesa
+    status = models.CharField(max_length=50, default='draft')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Checkout Session for Order {self.order.id}"
+    def __str__(self):
+        return f"Checkout Session for Order {self.order.id}"
+    
+
+class ProductReview(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='product_reviews')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reviews')
+    rating = models.PositiveSmallIntegerField(choices=RATING)  # Use your existing RATING choices
+    review_text = models.TextField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_approved = models.BooleanField(default=False)  # Optional: admin approval for reviews
+
+    def __str__(self):
+        return f"Review by {self.user.username} for {self.product.title} ({self.rating} stars)"
+
+
+from django.utils import timezone
+from .models import CheckoutSession
+
+class MpesaTransaction(models.Model):
+    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='mpesa_transaction')
+    checkout_session = models.OneToOneField(CheckoutSession, on_delete=models.CASCADE, null=True, blank=True, related_name='mpesa_transaction')
+    merchant_request_id = models.CharField(max_length=255, unique=True)
+    checkout_request_id = models.CharField(max_length=255, unique=True)
+    mpesa_receipt_number = models.CharField(max_length=255, null=True, blank=True)
+    transaction_date = models.DateTimeField(null=True, blank=True)
+    phone_number = models.CharField(max_length=12)  # M-Pesa phone number format (e.g., 2547XXXXXXXX)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    result_code = models.IntegerField(null=True, blank=True)  # M-Pesa result code (0 for success, others for errors)
+    result_desc = models.CharField(max_length=255, null=True, blank=True)  # Description of the result
+    status = models.CharField(max_length=50, default='pending')  # e.g., 'pending', 'successful', 'failed'
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"M-Pesa Transaction for Order {self.order.id} - {self.status}"
+
+    class Meta:
+        verbose_name = "M-Pesa Transaction"
+        verbose_name_plural = "M-Pesa Transactions"
