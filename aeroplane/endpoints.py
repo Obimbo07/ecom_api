@@ -561,13 +561,16 @@ class CheckoutSessionResponse(BaseModel):
 @router.post("/checkout-session/", response_model=CheckoutSessionResponse)
 def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_current_user)):
     try:
+        print(request.order_id)
         order = Order.objects.get(id=request.order_id, user=user)
+        print(order)
+
         if order.payment_status != "unpaid":
             raise HTTPException(status_code=400, detail="Order already processed")
 
         shipping_address = ShippingAddress.objects.get(id=request.shipping_address_id, user=user)
         payment_method = PaymentMethod.objects.get(id=request.payment_method_id, user=user)
-
+        print(payment_method, shipping_address)
         # Calculate order total (ensure it matches your items)
         order_total = sum(item.price * item.quantity for item in order.items.all())
         
@@ -576,33 +579,34 @@ def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_cu
         print(phone_number, "number")
         if not phone_number or not phone_number.startswith('254'):
             raise HTTPException(status_code=400, detail="Invalid M-Pesa phone number")
-
+        print(order, phone_number, order_total, 'sjwjqsdn')
         # Initiate M-Pesa STK Push
-        callback_url = f"https://moha.com/api/mpesa-callback"
+        callback_url = f"https://9fce-102-135-168-133.ngrok-free.app/api/mpesa-callback"
         mpesa_response = initiate_mpesa_stk_push(order, phone_number, order_total, callback_url)
+        print(mpesa_response, 'stk push response')
 
-        # Create or update CheckoutSession (optional, if still needed)
-        checkout_session, created = CheckoutSession.objects.get_or_create(order=order)
-        checkout_session.status = 'pending'
-        checkout_session.save()
-
-        return CheckoutSessionResponse( 
+        transformed_response = CheckoutSessionResponse(
             checkout_request_id=mpesa_response['CheckoutRequestID'],
             merchant_request_id=mpesa_response['MerchantRequestID'],
             response_code=mpesa_response['ResponseCode'],
             response_description=mpesa_response['ResponseDescription'],
             customer_message=mpesa_response['CustomerMessage']
         )
+
+        return transformed_response
     except (Order.DoesNotExist, ShippingAddress.DoesNotExist, PaymentMethod.DoesNotExist):
         raise HTTPException(status_code=404, detail="Order, shipping address, or payment method not found")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     
-
 @router.post("/mpesa-callback/")
 async def mpesa_callback(request: Request):
-    body = await request.json()
-    result = process_mpesa_callback(body)
-    if result['status'] == 'error':
-        raise HTTPException(status_code=500, detail=result['message'])
-    return JSONResponse(content={'status': 'success', 'message': result['message']})
+    try:
+        body = await request.json()
+        result = await process_mpesa_callback(body)
+        print(result, 'result')
+        if result['status'] == 'error':
+            raise HTTPException(status_code=500, detail=result['message'])
+        return JSONResponse(content={'status': 'success', 'message': result['message']})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
