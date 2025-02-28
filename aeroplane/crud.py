@@ -1,7 +1,9 @@
 import base64
 from datetime import datetime
+from django.utils import timezone
 from typing import List, Optional
 from django.db import transaction
+from fastapi import HTTPException
 import requests
 from .models import Cart, CartItem, Category, CheckoutSession, Order, Product, ProductReview  # Assuming Product is one of your models
 
@@ -277,7 +279,7 @@ def initiate_mpesa_stk_push(order: Order, phone_number: str, amount: float, call
         "Password": password,
         "Timestamp": timestamp,
         "TransactionType": "CustomerPayBillOnline",
-        "Amount": int(amount),  # M-Pesa requires whole numbers
+        "Amount": int(amount),
         "PartyA": phone_number,
         "PartyB": business_shortcode,
         "PhoneNumber": phone_number,
@@ -302,12 +304,15 @@ def initiate_mpesa_stk_push(order: Order, phone_number: str, amount: float, call
     print(mpesa_response, 'mpesa response')
     
     # Create or update MpesaTransaction
+    checkout_session, _ = CheckoutSession.objects.get_or_create(order=order)
     mpesa_transaction, created = MpesaTransaction.objects.get_or_create(
         order=order,
         defaults={
-            'checkout_session': CheckoutSession.objects.get_or_create(order=order)[0],
+            'checkout_session': checkout_session,
             'merchant_request_id': mpesa_response['MerchantRequestID'],
             'checkout_request_id': mpesa_response['CheckoutRequestID'],
+            'result_desc': mpesa_response['ResponseDescription'],
+            'result_code': mpesa_response['ResponseCode'],
             'phone_number': phone_number,
             'amount': amount,
             'status': 'pending',
@@ -317,18 +322,26 @@ def initiate_mpesa_stk_push(order: Order, phone_number: str, amount: float, call
     if not created:
         mpesa_transaction.merchant_request_id = mpesa_response['MerchantRequestID']
         mpesa_transaction.checkout_request_id = mpesa_response['CheckoutRequestID']
+        mpesa_transaction.result_code = mpesa_response['ResponseCode']
+        mpesa_transaction.result_desc = mpesa_response['ResponseDescription']
         mpesa_transaction.phone_number = phone_number
         mpesa_transaction.amount = amount
         mpesa_transaction.status = 'pending'
         mpesa_transaction.save()
+
+     # Update the checkout_session's mpesa_receipt_number with the checkout_request_id
     
     return mpesa_response
 
+from asgiref.sync import sync_to_async
+
+@sync_to_async
 def process_mpesa_callback(callback_data):
     """
     Process the M-Pesa callback data and update the MpesaTransaction and related Order.
     """
     try:
+        print(callback_data)
         stk_callback = callback_data['Body']['stkCallback']
         checkout_request_id = stk_callback['CheckoutRequestID']
         result_code = stk_callback['ResultCode']
@@ -340,26 +353,46 @@ def process_mpesa_callback(callback_data):
         mpesa_receipt_number = next((item['Value'] for item in metadata if item['Name'] == 'MpesaReceiptNumber'), None)
         transaction_date = next((item['Value'] for item in metadata if item['Name'] == 'TransactionDate'), None)
         phone_number = next((item['Value'] for item in metadata if item['Name'] == 'PhoneNumber'), None)
+
+        # Ensure transaction_date is in the correct format
+        if transaction_date is not None:
+            transaction_date = datetime.strptime(str(transaction_date), '%Y%m%d%H%M%S')
+            transaction_date = timezone.make_aware(transaction_date, timezone.get_current_timezone())
         
-        # Update MpesaTransaction
-        mpesa_transaction = MpesaTransaction.objects.get(checkout_request_id=checkout_request_id)
-        order = mpesa_transaction.order
+        with transaction.atomic():
+            mpesa_transaction = MpesaTransaction.objects.get(checkout_request_id=checkout_request_id)
+            order = mpesa_transaction.order
+            checkout_session = CheckoutSession.objects.get(order=order)
+
+            print(checkout_session, 'checkout_session')
+            print(checkout_session.mpesa_receipt_number, 'checkout_session.mpesa_receipt_number')
+            print(checkout_request_id, 'checkout_request_id')
+
+            if checkout_session.mpesa_receipt_number == checkout_request_id:
+                raise HTTPException(status_code=400, detail="Callback already processed")
+
+            if result_code == 0:
+                checkout_session.mpesa_receipt_number = checkout_request_id
+                checkout_session.transaction_date = transaction_date
+                checkout_session.status = 'completed'
+
+                mpesa_transaction.status = 'successful'
+                mpesa_transaction.mpesa_receipt_number = mpesa_receipt_number
+                mpesa_transaction.amount = amount
+                mpesa_transaction.transaction_date = transaction_date
+                mpesa_transaction.phone_number = phone_number
+                mpesa_transaction.result_code = result_code
+                mpesa_transaction.result_desc = result_desc
+                order.status = 'processing'
+                order.payment_status = 'paid'
+                order.save()
+                mpesa_transaction.save()
+                checkout_session.save()
+            else:
+                mpesa_transaction.status = 'failed'
+                mpesa_transaction.result_desc = result_desc
+                mpesa_transaction.save()
         
-        if result_code == 0:  # Success
-            mpesa_transaction.status = 'successful'
-            mpesa_transaction.mpesa_receipt_number = mpesa_receipt_number
-            mpesa_transaction.transaction_date = datetime.strptime(transaction_date, '%Y%m%d%H%M%S')
-            mpesa_transaction.result_code = result_code
-            mpesa_transaction.result_desc = result_desc
-            order.payment_status = 'paid'
-        else:  # Failure
-            mpesa_transaction.status = 'failed'
-            mpesa_transaction.result_code = result_code
-            mpesa_transaction.result_desc = result_desc
-            order.payment_status = 'failed'
-        
-        mpesa_transaction.save()
-        order.save()
-        return {'status': 'success', 'message': result_desc}
+        return {'status': 'success', 'message': 'Callback processed successfully'}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
