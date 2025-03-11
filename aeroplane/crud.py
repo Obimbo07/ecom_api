@@ -396,3 +396,37 @@ def process_mpesa_callback(callback_data):
         return {'status': 'success', 'message': 'Callback processed successfully'}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
+    
+
+def process_mpesa_query(checkout_request_id):
+    """
+    Check the status of a Lipa Na M-Pesa Online Payment.
+    """
+    business_shortcode = settings.MPESA_BUSINESS_SHORTCODE
+    passkey = settings.MPESA_PASSKEY
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        password = generate_mpesa_password(business_shortcode, passkey, timestamp)
+        
+        CheckoutRequestID = checkout_request_id["checkout_request_id"]
+        payload = {
+            "BusinessShortCode": business_shortcode,
+            "Password": password,
+            "Timestamp": timestamp,
+            "CheckoutRequestID": CheckoutRequestID,
+        }
+        
+        access_token = generate_mpesa_access_token()
+        url = 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query'
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        return {'status': 'error', 'message': str(e)}
+

@@ -13,7 +13,7 @@ from users.models import PaymentMethod, ShippingAddress
 from .models import RATING, Cart, CheckoutSession, Order, OrderItem, Product
 from .crud import (
     add_to_cart, create_checkout_session, create_pro_review, create_product, delete_product_review, get_categories,
-    get_or_create_cart, get_product, get_product_reviews, get_products, get_products_by_category, initiate_mpesa_stk_push, process_mpesa_callback,
+    get_or_create_cart, get_product, get_product_reviews, get_products, get_products_by_category, initiate_mpesa_stk_push, process_mpesa_callback, process_mpesa_query,
     remove_from_cart, update_cart_it, update_product, delete_product, update_product_review
 )
 
@@ -581,7 +581,7 @@ def create_checkout_session(request: CheckoutSessionRequest, user=Depends(get_cu
             raise HTTPException(status_code=400, detail="Invalid M-Pesa phone number")
         print(order, phone_number, order_total, 'sjwjqsdn')
         # Initiate M-Pesa STK Push
-        callback_url = f"https://9fce-102-135-168-133.ngrok-free.app/api/mpesa-callback"
+        callback_url = f"https://admin.mohacollection.co.ke/mpesa-callback"
         mpesa_response = initiate_mpesa_stk_push(order, phone_number, order_total, callback_url)
         print(mpesa_response, 'stk push response')
 
@@ -610,3 +610,36 @@ async def mpesa_callback(request: Request):
         return JSONResponse(content={'status': 'success', 'message': result['message']})
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+class MpesaQueryRequest(BaseModel):
+    checkout_request_id: str
+
+class MpesaQueryResponse(BaseModel):
+   ResponseCode: str    
+   ResponseDescription: str
+   MerchantRequestID:  str
+   CheckoutRequestID: str
+   ResultCode: str
+   ResultDesc: str
+
+@router.post("/query-mpesa/", response_model=MpesaQueryResponse)
+async def query_mpesa(request: MpesaQueryRequest, user=Depends(get_current_user)):
+    try:
+        # The request body is already parsed into the MpesaQueryRequest model
+        # No need to call request.json()
+        body = request.dict()  # Convert Pydantic model to dictionary for processing
+        print(body, 'body')
+
+        # Assuming process_mpesa_query is an async function
+        result =  process_mpesa_query(body)
+        print(result, 'result')
+
+        # Check for error in the result
+        if result.get('status') == 'error':
+            raise HTTPException(status_code=500, detail=result.get('message', 'Unknown error'))
+
+        # Return success response
+        return JSONResponse(content={'status': 'success', 'message': result.get('message', 'Query successful')})
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))    
