@@ -1,11 +1,27 @@
 import base64
 from datetime import datetime
+import os
 from django.utils import timezone
 from typing import List, Optional
 from django.db import transaction
 from fastapi import HTTPException
 import requests
 from .models import Cart, CartItem, Category, CheckoutSession, Order, Product, ProductReview  # Assuming Product is one of your models
+
+
+def encode_image_to_base64(image_field) -> Optional[str]:
+    if image_field and os.path.exists(image_field.path):
+        try:
+            with open(image_field.path, "rb") as image_file:
+                base64_string = base64.b64encode(image_file.read()).decode("utf-8")
+                return f"data:image/jpeg;base64,{base64_string}"
+        except Exception as e:
+            print(f"Error encoding image {image_field.path}: {e}")
+            return None
+    else:
+        print(f"Image not found or missing: {image_field.path if image_field else 'None'}")
+        return None
+
 
 def create_product(**kwargs):
     """
