@@ -2,6 +2,7 @@
 import os
 import sys
 
+from aeroplane.main import application
 
 def main():
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "aeroplane.settings")
