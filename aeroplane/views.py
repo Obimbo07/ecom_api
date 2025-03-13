@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 
 from .models import (
-    Product, Category, Cart, CartItem, CheckoutSession, Order, 
+    RATING, Product, Category, Cart, CartItem, CheckoutSession, Order, 
     OrderItem, ProductReview, MpesaTransaction
 )
 
@@ -27,9 +27,9 @@ from .crud import (
     get_product_reviews, update_product_review, delete_product_review, 
     initiate_mpesa_stk_push, process_mpesa_callback, process_mpesa_query
 )
-from users.views import check_session_status
+# from users.views import check_session_status
 
-get_current_user = check_session_status
+# request.user = check_session_status
 
 class ProductViewSet(viewsets.ModelViewSet):
     queryset = Product.objects.all()
@@ -75,27 +75,28 @@ class CartViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
-        user = get_current_user(request)
+        user = request.user
         cart = get_or_create_cart(user)
         serializer = CartSerializer(cart)
         return Response(serializer.data)
 
     def create(self, request):
-        user = get_current_user(request)
+        user = request.user
         cart = get_or_create_cart(user)
         item_data = CartItemSerializer(data=request.data)
         item_data.is_valid(raise_exception=True)
-        add_to_cart(cart, **item_data.validated_data)
+        validated_data = item_data.validated_data
+        add_to_cart(cart=cart, product_id=validated_data['product_id'], quantity=validated_data.get('quantity', 1))        
         return Response(CartSerializer(cart).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, pk=None):
-        user = get_current_user(request)
+        user = request.user
         cart = get_or_create_cart(user)
         cart = update_cart_it(cart, pk, **request.data)
         return Response(CartSerializer(cart).data)
 
     def destroy(self, request, pk=None):
-        user = get_current_user(request)
+        user = request.user
         cart = get_or_create_cart(user)
         if remove_from_cart(cart, pk):
             return Response({"message": "Item removed from cart"}, status=status.HTTP_200_OK)
@@ -104,7 +105,7 @@ class CartViewSet(viewsets.ViewSet):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_checkout(request):
-    user = get_current_user(request)
+    user = request.user
     cart = get_or_create_cart(user)
     checkout_session = create_checkout_session(cart)
     serializer = CheckoutSessionSerializer(checkout_session)
@@ -113,7 +114,7 @@ def create_checkout(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_order(request):
-    user = get_current_user(request)
+    user = request.user
     cart = Cart.objects.filter(user=user, is_active=True).first()
     if not cart or not cart.items.exists():
         return Response({"detail": "Cart is empty or does not exist"}, status=status.HTTP_400_BAD_REQUEST)
@@ -129,7 +130,7 @@ def create_order(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_orders(request):
-    user = get_current_user(request)
+    user = request.user
     orders = Order.objects.filter(user=user).order_by('-created_at')
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
@@ -139,7 +140,7 @@ def get_user_orders(request):
 def create_checkout_session_view(request):
     serializer = CheckoutSessionRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    user = get_current_user(request)
+    user = request.user
     
     order = get_object_or_404(Order, id=serializer.validated_data['order_id'], user=user)
     if order.payment_status != "unpaid":
@@ -179,3 +180,83 @@ def query_mpesa_view(request):
     if result.get('status') == 'error':
         return Response({"detail": result['message']}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     return Response(MpesaQueryResponseSerializer(result).data)
+
+
+# Product Review Endpoints
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_product_review(request, product_id):
+    """
+    Create a review for a specific product by the authenticated user.
+    """
+    serializer = ProductReviewSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    # Validate rating against RATING choices
+    rating = serializer.validated_data['rating']
+    if rating not in [choice[0] for choice in RATING]:
+        return Response({"detail": "Invalid rating value"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        review = create_pro_review(
+            user=request.user,
+            product_id=product_id,
+            data=serializer.validated_data
+        )
+        return Response(review, status=status.HTTP_201_CREATED)
+    except ValueError as e:
+        return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Allow anyone to view reviews
+def list_product_reviews(request, product_id):
+    """
+    Retrieve all reviews for a specific product.
+    """
+    reviews = get_product_reviews(product_id=product_id)
+    serializer = ProductReviewSerializer(reviews, many=True)
+    return Response(serializer.data)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_user_reviews(request):
+    """
+    Retrieve all reviews by the authenticated user.
+    """
+    reviews = get_product_reviews(user=request.user)
+    serializer = ProductReviewSerializer(reviews, many=True)
+    return Response(serializer.data)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_product_review_view(request, review_id):
+    """
+    Update an existing review by the authenticated user.
+    """
+    serializer = ProductReviewSerializer(data=request.data, partial=True)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    if 'rating' in serializer.validated_data and serializer.validated_data['rating'] not in [choice[0] for choice in RATING]:
+        return Response({"detail": "Invalid rating value"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        review = update_product_review(
+            review_id=review_id,
+            user=request.user,
+            data=serializer.validated_data
+        )
+        return Response(ProductReviewSerializer(review).data)
+    except ValueError as e:
+        return Response({"detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_product_review_view(request, review_id):
+    """
+    Delete a review by the authenticated user.
+    """
+    if delete_product_review(review_id, request.user):
+        return Response({"message": "Review deleted successfully"}, status=status.HTTP_200_OK)
+    return Response({"detail": "Review not found or unauthorized"}, status=status.HTTP_404_NOT_FOUND)

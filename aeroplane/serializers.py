@@ -37,8 +37,11 @@ class CategorySerializer(serializers.ModelSerializer):
 
     def get_image(self, obj):
         return encode_image_to_base64(obj.image)
-
 class CartItemSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField()  # Must be writable
+    quantity = serializers.IntegerField(default=1)
+    size = serializers.CharField(max_length=10, default='M', allow_null=True)
+
     class Meta:
         model = CartItem
         fields = ['id', 'product_id', 'quantity', 'size']

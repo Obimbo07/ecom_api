@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
-from rest_framework_simplejwt.tokens import AccessToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 from django.conf import settings
 from .serializers import (LoginRequestSerializer, RegisterRequestSerializer, 
@@ -21,6 +21,8 @@ def register_user(request):
     if serializer.is_valid():
         if User.objects.filter(username=serializer.validated_data['username']).exists():
             return Response({"detail": "Username already taken"}, status=status.HTTP_400_BAD_REQUEST)
+        if User.objects.filter(email=serializer.validated_data['email']).exists():
+           return Response({"detail": "Email already taken"}, status=status.HTTP_400_BAD_REQUEST)
         user = User.objects.create_user(
             username=serializer.validated_data['username'],
             email=serializer.validated_data['email'],
@@ -40,8 +42,8 @@ def login_user(request):
         if not user:
             return Response({"detail": "Invalid username or password"}, status=status.HTTP_401_UNAUTHORIZED)
         token = AccessToken.for_user(user)
-        print(f"Token: {token}")
-        return Response({"access_token": str(token), "token_type": "bearer"}, status=status.HTTP_200_OK)
+        refresh = RefreshToken.for_user(user)
+        return Response({"access_token": str(token), "refresh_token": str(refresh)}, status=status.HTTP_200_OK)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])

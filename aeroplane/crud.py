@@ -113,6 +113,10 @@ def get_or_create_cart(user=None) -> Cart:
     return cart
 
 def add_to_cart(cart: Cart, product_id: int, quantity: int = 1, size: str = 'M') -> CartItem:
+    print(cart, 'cart in Data')
+    print(product_id, 'product_id in Data')
+    print(quantity, 'quantity in Data')
+    print(size, 'size in Data')
     with transaction.atomic():
         product = Product.objects.get(id=product_id)
         cart_item, created = CartItem.objects.get_or_create(
@@ -199,16 +203,7 @@ def create_pro_review(user, product_id, data):
     review = ProductReview.objects.create(user=user, product=product, **data)
     
     # Return a dict matching ProductReviewResponse
-    return {
-        "id": review.id,
-        "user": review.user.username,  # Extract username as string
-        "product": review.product.id,  # Extract product ID as integer
-        "rating": review.rating,
-        "review_text": review.review_text,
-        "created_at": review.created_at,
-        "updated_at": review.updated_at,
-        "is_approved": review.is_approved,
-    }
+    return review
 
 def get_product_reviews(product_id=None, user=None):
     """
@@ -220,21 +215,8 @@ def get_product_reviews(product_id=None, user=None):
     if user:
         queryset = queryset.filter(user=user)
     
-    reviews = list(queryset)  # Convert QuerySet to list
-    return [
-        {
-            "id": review.id,
-            "user": review.user.username,  # Extract username as string
-            "product": review.product.id,  # Extract product ID as integer
-            "rating": review.rating,
-            "review_text": review.review_text,
-            "created_at": review.created_at,
-            "updated_at": review.updated_at,
-            "is_approved": review.is_approved,
-        }
-        for review in reviews
-    ]
-
+    return queryset  # Convert QuerySet to list
+    
 def update_product_review(review_id, user, data):
     review = ProductReview.objects.filter(id=review_id, user=user).first()
     if not review:
