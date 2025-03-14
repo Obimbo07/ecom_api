@@ -1,11 +1,11 @@
 from rest_framework import viewsets, status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.shortcuts import get_object_or_404
 
 from .models import (
-    RATING, Product, Category, Cart, CartItem, CheckoutSession, Order, 
+    RATING, HolidayDeal, Product, Category, Cart, CartItem, CheckoutSession, Order, 
     OrderItem, ProductReview, MpesaTransaction
 )
 
@@ -14,7 +14,7 @@ from users.models import (
 )
 
 from .serializers import (
-    ProductSerializer, CategorySerializer, CartSerializer, CartItemSerializer, 
+    HolidayDealSerializer, ProductSerializer, CategorySerializer, CartSerializer, CartItemSerializer, 
     CheckoutSessionSerializer, OrderSerializer, OrderItemSerializer, 
     ProductReviewSerializer, CheckoutSessionRequestSerializer, 
     CheckoutSessionResponseSerializer, MpesaQueryRequestSerializer, 
@@ -65,11 +65,21 @@ class ProductViewSet(viewsets.ModelViewSet):
         if not delete_product(pk):
             return Response({"detail": "Product not found"}, status=status.HTTP_404_NOT_FOUND)
         return Response({"message": "Product deleted successfully"}, status=status.HTTP_200_OK)
+    
+    @action(detail=False, methods=['get'], url_path='category/(?P<category_id>\d+)')
+    def list_by_category(self, request, category_id=None):
+        products = get_products_by_category(category_id)
+        if not products:
+            return Response({"detail": "No products found for this category"}, status=status.HTTP_404_NOT_FOUND)
+        serializer = self.get_serializer(products, many=True)
+        return Response(serializer.data)
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Category.objects.all()
     serializer_class = CategorySerializer
     permission_classes = [IsAuthenticated]
+
+    
 
 class CartViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticated]
@@ -260,3 +270,27 @@ def delete_product_review_view(request, review_id):
     if delete_product_review(review_id, request.user):
         return Response({"message": "Review deleted successfully"}, status=status.HTTP_200_OK)
     return Response({"detail": "Review not found or unauthorized"}, status=status.HTTP_404_NOT_FOUND)
+
+class HolidayDealViewSet(viewsets.ModelViewSet):
+    queryset = HolidayDeal.objects.all()
+    serializer_class = HolidayDealSerializer
+    permission_classes = [AllowAny]
+    lookup_field = 'deal_id'
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset().filter(is_active=True)        
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+    
+    def retrieve(self, request, *args, **kwargs):
+        # Explicitly handle the detail view
+        deal = self.get_object()
+        serializer = self.get_serializer(deal)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'], url_path='products')
+    def get_products(self, request, deal_id=None):
+        deal = self.get_object()
+        products = deal.products.all()
+        serializer = ProductSerializer(products, many=True)
+        return Response(serializer.data)

@@ -3,7 +3,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from aeroplane.views import (
-    ProductViewSet, CategoryViewSet, CartViewSet, create_checkout, 
+    HolidayDealViewSet, ProductViewSet, CategoryViewSet, CartViewSet, create_checkout, 
     create_order, get_user_orders, create_checkout_session_view, 
     mpesa_callback_view, query_mpesa_view,
     # New review endpoints
@@ -15,6 +15,7 @@ router = DefaultRouter()
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'categories', CategoryViewSet, basename='category')
 router.register(r'cart', CartViewSet, basename='cart')
+router.register(r'holiday-deals', HolidayDealViewSet, basename='holiday-deal')
 
 urlpatterns = [
     path('admin/', admin.site.urls),
