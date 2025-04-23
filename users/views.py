@@ -15,8 +15,8 @@ from .crud import (create_shipping_address, get_shipping_addresses, update_shipp
 User = get_user_model()
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 def register_user(request):
+    print(request.data)
     serializer = RegisterRequestSerializer(data=request.data)
     if serializer.is_valid():
         if User.objects.filter(username=serializer.validated_data['username']).exists():
@@ -32,13 +32,12 @@ def register_user(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
 def login_user(request):
     serializer = LoginRequestSerializer(data=request.data)
     if serializer.is_valid():
-        username = serializer.validated_data['username']
+        email = serializer.validated_data['email']
         password = serializer.validated_data['password']
-        user = authenticate(username=username, password=password)
+        user = authenticate(username=email, password=password)
         if not user:
             return Response({"detail": "Invalid username or password"}, status=status.HTTP_401_UNAUTHORIZED)
         token = AccessToken.for_user(user)
@@ -64,8 +63,30 @@ def check_session_status(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_user_profile(request):
-    serializer = UserProfileSerializer(request.user)
-    return Response(serializer.data)
+    try:
+        serializer = UserProfileSerializer(request.user)
+        print(serializer, 'sjasndas')
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"detail": f"Error fetching user profile: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_user_profile(request):
+    try:
+        # Handle multipart/form-data for file uploads
+        if request.content_type.startswith('multipart/form-data'):
+            serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        else:
+            serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({"detail": f"Error updating user profile: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 class ShippingAddressViewSet(viewsets.ModelViewSet):
     serializer_class = ShippingAddressSerializer
