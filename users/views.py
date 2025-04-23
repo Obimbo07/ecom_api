@@ -67,7 +67,7 @@ def check_session_status(request):
 def get_user_profile(request):
     try:
         serializer = UserProfileSerializer(request.user)
-        print(serializer, 'sjasndas')
+        print(serializer.data, 'sjasndas')
         return Response(serializer.data, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"detail": f"Error fetching user profile: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -76,6 +76,7 @@ def get_user_profile(request):
 @permission_classes([IsAuthenticated])
 def update_user_profile(request):
     try:
+        print(request.data, 'request.data')
         # Handle multipart/form-data for file uploads
         if request.content_type.startswith('multipart/form-data'):
             serializer = UserProfileSerializer(request.user, data=request.data, partial=True)

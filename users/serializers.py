@@ -25,7 +25,7 @@ class PaymentMethodSerializer(serializers.ModelSerializer):
                   'created_at', 'updated_at']
 
 class ProfileSerializer(serializers.ModelSerializer):
-    image = serializers.SerializerMethodField()
+    image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
         model = Profile
@@ -59,6 +59,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop('profile', {})
+        print(f"Profile data: {profile_data}")
         instance.email = validated_data.get('email', instance.email)
         instance.bio = validated_data.get('bio', instance.bio)
         instance.save()
@@ -68,6 +69,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         profile.bio = profile_data.get('bio', profile.bio)
         profile.phone = profile_data.get('phone', profile.phone)
         if 'image' in profile_data:
+            print(f"Image data: {profile_data['image']}")
             profile.image = profile_data['image']
         profile.save()
 

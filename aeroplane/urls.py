@@ -11,6 +11,9 @@ from aeroplane.views import (
     update_product_review, delete_product_review
 )
 
+from django.conf import settings
+from django.conf.urls.static import static
+
 router = DefaultRouter()
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'categories', CategoryViewSet, basename='category')
@@ -35,4 +38,4 @@ urlpatterns = [
     path('api/users/reviews/', list_user_reviews, name='user-reviews'),
     path('api/reviews/<int:review_id>/', update_product_review, name='update-review'),
     path('api/reviews/<int:review_id>/delete/', delete_product_review, name='delete-review'),
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

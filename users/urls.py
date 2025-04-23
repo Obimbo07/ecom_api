@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (register_user, login_user, logout_user, check_session_status, 
-                    get_user_profile, ShippingAddressViewSet, PaymentMethodViewSet)
+                    get_user_profile, ShippingAddressViewSet, PaymentMethodViewSet, update_user_profile)
 
 router = DefaultRouter()
 router.register(r'shipping-addresses', ShippingAddressViewSet, basename='shipping-address')
@@ -13,5 +13,6 @@ urlpatterns = [
     path('logout/', logout_user, name='logout'),
     path('session/', check_session_status, name='session_status'),
     path('me/', get_user_profile, name='user_profile'),
+    path('me/update/', update_user_profile, name='update_user_profile'),
     path('', include(router.urls)),
 ]
