@@ -1,11 +1,27 @@
 import base64
 from datetime import datetime
+import os
 from django.utils import timezone
 from typing import List, Optional
 from django.db import transaction
 from fastapi import HTTPException
 import requests
 from .models import Cart, CartItem, Category, CheckoutSession, Order, Product, ProductReview  # Assuming Product is one of your models
+
+
+def encode_image_to_base64(image_field) -> Optional[str]:
+    if image_field and os.path.exists(image_field.path):
+        try:
+            with open(image_field.path, "rb") as image_file:
+                base64_string = base64.b64encode(image_file.read()).decode("utf-8")
+                return f"data:image/jpeg;base64,{base64_string}"
+        except Exception as e:
+            print(f"Error encoding image {image_field.path}: {e}")
+            return None
+    else:
+        print(f"Image not found or missing: {image_field.path if image_field else 'None'}")
+        return None
+
 
 def create_product(**kwargs):
     """
@@ -97,6 +113,10 @@ def get_or_create_cart(user=None) -> Cart:
     return cart
 
 def add_to_cart(cart: Cart, product_id: int, quantity: int = 1, size: str = 'M') -> CartItem:
+    print(cart, 'cart in Data')
+    print(product_id, 'product_id in Data')
+    print(quantity, 'quantity in Data')
+    print(size, 'size in Data')
     with transaction.atomic():
         product = Product.objects.get(id=product_id)
         cart_item, created = CartItem.objects.get_or_create(
@@ -183,16 +203,7 @@ def create_pro_review(user, product_id, data):
     review = ProductReview.objects.create(user=user, product=product, **data)
     
     # Return a dict matching ProductReviewResponse
-    return {
-        "id": review.id,
-        "user": review.user.username,  # Extract username as string
-        "product": review.product.id,  # Extract product ID as integer
-        "rating": review.rating,
-        "review_text": review.review_text,
-        "created_at": review.created_at,
-        "updated_at": review.updated_at,
-        "is_approved": review.is_approved,
-    }
+    return review
 
 def get_product_reviews(product_id=None, user=None):
     """
@@ -204,21 +215,8 @@ def get_product_reviews(product_id=None, user=None):
     if user:
         queryset = queryset.filter(user=user)
     
-    reviews = list(queryset)  # Convert QuerySet to list
-    return [
-        {
-            "id": review.id,
-            "user": review.user.username,  # Extract username as string
-            "product": review.product.id,  # Extract product ID as integer
-            "rating": review.rating,
-            "review_text": review.review_text,
-            "created_at": review.created_at,
-            "updated_at": review.updated_at,
-            "is_approved": review.is_approved,
-        }
-        for review in reviews
-    ]
-
+    return queryset  # Convert QuerySet to list
+    
 def update_product_review(review_id, user, data):
     review = ProductReview.objects.filter(id=review_id, user=user).first()
     if not review:
@@ -396,3 +394,37 @@ def process_mpesa_callback(callback_data):
         return {'status': 'success', 'message': 'Callback processed successfully'}
     except Exception as e:
         return {'status': 'error', 'message': str(e)}
+    
+
+def process_mpesa_query(checkout_request_id):
+    """
+    Check the status of a Lipa Na M-Pesa Online Payment.
+    """
+    business_shortcode = settings.MPESA_BUSINESS_SHORTCODE
+    passkey = settings.MPESA_PASSKEY
+    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+
+    try:
+        timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+        password = generate_mpesa_password(business_shortcode, passkey, timestamp)
+        
+        CheckoutRequestID = checkout_request_id["checkout_request_id"]
+        payload = {
+            "BusinessShortCode": business_shortcode,
+            "Password": password,
+            "Timestamp": timestamp,
+            "CheckoutRequestID": CheckoutRequestID,
+        }
+        
+        access_token = generate_mpesa_access_token()
+        url = 'https://sandbox.safaricom.co.ke/mpesa/stkpushquery/v1/query'
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        return {'status': 'error', 'message': str(e)}
+

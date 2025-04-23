@@ -5,7 +5,7 @@ from shortuuidfield import ShortUUIDField
 from users.models import User
 from django.utils.safestring import mark_safe
 from django_ckeditor_5.fields import CKEditor5Field
-
+from django.core.validators import MinValueValidator, MaxValueValidator
 STATUS_CHOICE = (
     ("processing", "Processing"),
     ("shipped", "Shipped"),
@@ -215,3 +215,66 @@ class MpesaTransaction(models.Model):
     class Meta:
         verbose_name = "M-Pesa Transaction"
         verbose_name_plural = "M-Pesa Transactions"
+
+class HolidayDeal(models.Model):
+    # Unique identifier for the deal
+    deal_id = ShortUUIDField(unique=True, max_length=20)
+    
+    # Name of the holiday/deal (e.g., "Ramadan Sale", "Idd Special")
+    name = models.CharField(max_length=100, unique=True, help_text=_("Name of the holiday deal (e.g., Ramadan Sale)"))
+    
+    # Description of the deal
+    description = models.TextField(null=True, blank=True, help_text=_("Optional description of the deal"))
+    
+    # Products associated with this deal
+    products = models.ManyToManyField(Product, related_name='holiday_deals', help_text=_("Products included in this deal"))
+    
+    # Discount percentage (0-100%)
+    discount_percentage = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=_("Discount percentage off the product price (0-100)")
+    )
+    
+    # Start and end dates for the deal
+    start_date = models.DateTimeField(help_text=_("Start date and time of the deal"))
+    end_date = models.DateTimeField(help_text=_("End date and time of the deal"))
+    
+    # Active status (automatically managed based on dates)
+    is_active = models.BooleanField(default=False, editable=False, help_text=_("Automatically set based on start/end dates"))
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Holiday Deal"
+        verbose_name_plural = "Holiday Deals"
+        ordering = ['-start_date']
+
+    def __str__(self):
+        return f"{self.name} ({self.discount_percentage}% off)"
+
+    def save(self, *args, **kwargs):
+        """Override save to update is_active based on current date."""
+        now = timezone.now()
+        self.is_active = self.start_date <= now <= self.end_date
+        super().save(*args, **kwargs)
+
+    def get_discounted_price(self, product):
+        """Calculate the discounted price for a given product."""
+        if self.is_active:
+            discount = (self.discount_percentage / 100) * product.price
+            return product.price - discount
+        return product.price
+
+    @property
+    def is_expired(self):
+        """Check if the deal has expired."""
+        return timezone.now() > self.end_date
+
+    @property
+    def is_upcoming(self):
+        """Check if the deal is yet to start."""
+        return timezone.now() < self.start_date

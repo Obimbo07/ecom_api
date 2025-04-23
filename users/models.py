@@ -6,7 +6,7 @@ from django.db.models.signals import post_save
 class User(AbstractUser):
     email = models.EmailField(unique=True)
     username = models.CharField(max_length=20, unique=True)
-    bio= models.CharField(max_length=300)
+    bio= models.CharField(max_length=300, blank=True, null=True)
 
     def __str__(self):
         return self.username
