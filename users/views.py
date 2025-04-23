@@ -15,6 +15,7 @@ from .crud import (create_shipping_address, get_shipping_addresses, update_shipp
 User = get_user_model()
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def register_user(request):
     print(request.data)
     serializer = RegisterRequestSerializer(data=request.data)
@@ -32,6 +33,7 @@ def register_user(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
 def login_user(request):
     serializer = LoginRequestSerializer(data=request.data)
     if serializer.is_valid():
