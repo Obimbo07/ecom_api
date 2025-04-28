@@ -219,7 +219,7 @@ class MpesaTransaction(models.Model):
 class HolidayDeal(models.Model):
     # Unique identifier for the deal
     deal_id = ShortUUIDField(unique=True, max_length=20)
-    
+    deal_image = models.ImageField(upload_to="holiday_deals", default="holiday_deal.jpg")
     # Name of the holiday/deal (e.g., "Ramadan Sale", "Idd Special")
     name = models.CharField(max_length=100, unique=True, help_text=_("Name of the holiday deal (e.g., Ramadan Sale)"))
     
