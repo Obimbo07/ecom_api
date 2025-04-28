@@ -32,6 +32,22 @@ INSTALLED_APPS = [
     "corsheaders",
 ]
 
+# CACHES = {
+#     "default": {
+#         "BACKEND": "django_redis.cache.RedisCache",
+#         "LOCATION": "redis://127.0.0.1:6379/1",
+#         "OPTIONS": {
+#             "CLIENT_CLASS": "django_redis.client.DefaultClient",
+#             "COMPRESSOR": "django_redis.compressors.zlib.ZlibCompressor",
+#             "IGNORE_EXCEPTIONS": True,
+#         }
+#     }
+# }
+
+# DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
+
+# SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+# SESSION_CACHE_ALIAS = "default"
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -68,7 +84,7 @@ MIDDLEWARE = [
 
 # Specify the allowed origins:
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
+    "https://mohacollection.co.ke",
 ]
 
 # Enable credentials (cookies, authorization headers, etc.)
