@@ -79,6 +79,11 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+AUTHENTICATION_BACKENDS = [
+    'users.authentication.EmailBackend', 
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 # Remove or comment out the wildcard setting:
 # CORS_ALLOW_ALL_ORIGINS = True
 

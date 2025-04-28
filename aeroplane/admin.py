@@ -62,7 +62,7 @@ class MpesaTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(HolidayDeal)
 class HolidayDealAdmin(admin.ModelAdmin):
-    list_display = ('name', 'discount_percentage', 'start_date', 'end_date', 'is_active', 'created_at')
+    list_display = ( 'deal_image','name', 'discount_percentage', 'start_date', 'end_date', 'is_active', 'created_at')
     list_filter = ('is_active', 'start_date', 'end_date')
     search_fields = ('name',)
     filter_horizontal = ('products',)  # For easier ManyToMany selection
