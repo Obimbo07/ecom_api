@@ -129,11 +129,15 @@ class MpesaQueryResponseSerializer(serializers.Serializer):
     
 class HolidayDealSerializer(serializers.ModelSerializer):
     deal_id = serializers.CharField() 
+    deal_image = serializers.SerializerMethodField()
     products = serializers.SerializerMethodField()
 
     def get_products(self, obj):
       return obj.products.count()
 
+    def get_deal_image(self, obj):
+        return encode_image_to_base64(obj.deal_image)
+
     class Meta:
         model = HolidayDeal
-        fields = ['deal_id', 'name', 'discount_percentage', 'start_date', 'end_date', 'is_active', 'products']	
+        fields = ['deal_id', 'deal_image', 'name', 'discount_percentage', 'start_date', 'end_date', 'is_active', 'products']	
